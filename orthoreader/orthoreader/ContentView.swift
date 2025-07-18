@@ -24,82 +24,115 @@ struct ContentView: View {
     @State private var wordGroups: [[Int]] = [] // Each group is an array of word indices
     @State private var selectedGroup: Int? = nil
     @State private var spokenGroup: Int? = nil
+    @State private var pendingGroupJump: Int? = nil
+    @State private var isJumping = false
+
+    // Voice selection
+    @State private var availableVoices: [AVSpeechSynthesisVoice] = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
+    @State private var selectedVoiceIdentifier: String = AVSpeechSynthesisVoice.speechVoices().first(where: { $0.language.hasPrefix("en") })?.identifier ?? ""
 
     var body: some View {
-        VStack {
-            Button(action: {
-                isPickerPresented = true
-            }) {
-                Label("Select PDF", systemImage: "doc.text")
+        ZStack {
+            // Show background image only when no PDF is loaded
+            if extractedText.isEmpty {
+                Image("LaunchBackground")
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
             }
-            .padding()
-
-            Button(action: {
-                loadSamplePDF()
-            }) {
-                Label("Load Sample PDF", systemImage: "doc.richtext")
-            }
-            .padding(.bottom)
-
-            if !extractedText.isEmpty {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(wordGroups.indices, id: \.self) { groupIdx in
-                            let group = wordGroups[groupIdx]
-                            let start = wordOffsets[group.first ?? 0].start
-                            let end = wordOffsets[group.last ?? 0].end
-                            let textRange = extractedText.index(extractedText.startIndex, offsetBy: start)..<extractedText.index(extractedText.startIndex, offsetBy: end)
-                            let groupText = String(extractedText[textRange])
-                            Button(action: {
-                                selectedGroup = groupIdx
-                                // Here you would start TTS from this group
-                            }) {
-                                Text(groupText)
-                                    .padding(4)
-                                    .background((selectedGroup == groupIdx || spokenGroup == groupIdx) ? Color.yellow.opacity(0.3) : Color.clear)
-                                    .cornerRadius(4)
-                            }
-                        }
-                    }
-                    .padding()
+            VStack {
+                Button(action: {
+                    isPickerPresented = true
+                }) {
+                    Label("Select PDF", systemImage: "doc.text")
                 }
-                HStack {
-                    if !isSpeaking {
-                        Button(action: {
-                            startSpeaking()
-                        }) {
-                            Label("Read Aloud", systemImage: "speaker.wave.2.fill")
-                        }
-                        .padding(.trailing)
-                        .disabled(extractedText.isEmpty)
-                    }
-                    if isSpeaking {
-                        Button(action: {
-                            if isPaused {
-                                resumeSpeaking()
-                            } else {
-                                pauseSpeaking()
-                            }
-                        }) {
-                            Label(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill")
-                        }
-                        Button(action: {
-                            restartFromBeginning()
-                        }) {
-                            Label("Restart", systemImage: "arrow.counterclockwise")
-                        }
-                        .disabled(extractedText.isEmpty)
-                    }
+                .padding()
+
+                Button(action: {
+                    loadSamplePDF()
+                }) {
+                    Label("Load Sample PDF", systemImage: "doc.richtext")
                 }
                 .padding(.bottom)
-            } else {
-                Text("No PDF selected.")
-                    .foregroundColor(.secondary)
-            }
 
-            if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .foregroundColor(.red)
+                // Voice Picker
+                if !availableVoices.isEmpty {
+                    Picker("Voice", selection: $selectedVoiceIdentifier) {
+                        ForEach(availableVoices, id: \.self) { voice in
+                            Text(voice.name + " (" + voice.language + ")").tag(voice.identifier)
+                        }
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .padding(.horizontal)
+                }
+
+                if !extractedText.isEmpty {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(wordGroups.indices, id: \.self) { groupIdx in
+                                let group = wordGroups[groupIdx]
+                                let start = wordOffsets[group.first ?? 0].start
+                                let end = wordOffsets[group.last ?? 0].end
+                                let textRange = extractedText.index(extractedText.startIndex, offsetBy: start)..<extractedText.index(extractedText.startIndex, offsetBy: end)
+                                let groupText = String(extractedText[textRange])
+                                let isHighlighted = selectedGroup == groupIdx || spokenGroup == groupIdx
+                                Button(action: {
+                                    selectedGroup = groupIdx
+                                    if isSpeaking {
+                                        pendingGroupJump = groupIdx
+                                        stopSpeaking()
+                                    } else {
+                                        startSpeaking(fromGroup: groupIdx)
+                                    }
+                                }) {
+                                    Text(groupText)
+                                        .padding(4)
+                                        .background(isHighlighted ? Color.yellow.opacity(0.3) : Color.clear)
+                                        .cornerRadius(4)
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+                    // Move controls here so they are always visible
+                    HStack {
+                        if !isSpeaking {
+                            Button(action: {
+                                startSpeaking()
+                            }) {
+                                Label("Read Aloud", systemImage: "speaker.wave.2.fill")
+                            }
+                            .padding(.trailing)
+                            .disabled(extractedText.isEmpty)
+                        }
+                        if isSpeaking {
+                            Button(action: {
+                                if isPaused {
+                                    resumeSpeaking()
+                                } else {
+                                    pauseSpeaking()
+                                }
+                            }) {
+                                Label(isPaused ? "Resume" : "Pause", systemImage: isPaused ? "play.fill" : "pause.fill")
+                            }
+                            Button(action: {
+                                restartFromBeginning()
+                            }) {
+                                Label("Restart", systemImage: "arrow.counterclockwise")
+                            }
+                            .disabled(extractedText.isEmpty)
+                        }
+                    }
+                    .padding(.bottom)
+                } else {
+                    Text("No PDF selected.")
+                        .foregroundColor(.secondary)
+                }
+
+                if let errorMessage = errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                }
             }
         }
         .sheet(isPresented: $isPickerPresented) {
@@ -142,60 +175,65 @@ struct ContentView: View {
         let nsText = extractedText as NSString
         let wordRegex = try! NSRegularExpression(pattern: "\\b\\w+\\b", options: [])
         let matches = wordRegex.matches(in: extractedText, options: [], range: NSRange(location: 0, length: nsText.length))
-        
-        print("📚 Found \(matches.count) words in text")
-        
         for (i, match) in matches.enumerated() {
             let wordRange = (start: match.range.location, end: match.range.location + match.range.length)
             wordOffsets.append(wordRange)
-            let word = nsText.substring(with: match.range)
-            print("Word \(i): '\(word)' at range \(wordRange)")
         }
-        
         // Group words by 8
         var group: [Int] = []
         for (i, _) in wordOffsets.enumerated() {
             group.append(i)
             if group.count == 8 {
                 wordGroups.append(group)
-                print("📦 Created group \(wordGroups.count - 1): words \(group)")
                 group = []
             }
         }
         if !group.isEmpty {
             wordGroups.append(group)
-            print("📦 Created final group \(wordGroups.count - 1): words \(group)")
         }
-        
-        print("📊 Total groups created: \(wordGroups.count)")
     }
 
     // MARK: - Text-to-Speech
     private func startSpeaking() {
-        guard !synthesizer.isSpeaking, !extractedText.isEmpty else { return }
-        let utterance = AVSpeechUtterance(string: extractedText)
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        startSpeaking(fromGroup: 0)
+    }
+
+    private func startSpeaking(fromGroup groupIdx: Int) {
+        guard !extractedText.isEmpty else { return }
+        isSpeaking = true // Set immediately so controls stay visible
+        // Do NOT call stopSpeaking() here
+        guard groupIdx < wordGroups.count else { return }
+        let startWordIdx = wordGroups[groupIdx].first ?? 0
+        let startChar = wordOffsets[startWordIdx].start
+        let utterText = String(extractedText[extractedText.index(extractedText.startIndex, offsetBy: startChar)...])
+        let utterance = AVSpeechUtterance(string: utterText)
+        if let voice = availableVoices.first(where: { $0.identifier == selectedVoiceIdentifier }) {
+            utterance.voice = voice
+        } else {
+            utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        }
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         let delegate = SpeechDelegate(
-            onFinish: { isSpeaking = false; isPaused = false; spokenGroup = nil },
+            onFinish: {
+                if let jumpGroup = pendingGroupJump {
+                    pendingGroupJump = nil
+                    startSpeaking(fromGroup: jumpGroup)
+                } else {
+                    isSpeaking = false
+                    isPaused = false
+                    spokenGroup = nil
+                }
+            },
             onPause: { isPaused = true },
             onContinue: { isPaused = false },
             onCharSpoken: { range in
                 DispatchQueue.main.async {
-                    // Find which group contains the start of the spoken range
-                    let charIdx = range.location
-                    print("🔍 Looking for word at character index: \(charIdx)")
-                    
+                    // Find which group contains the start of the spoken range (offset by startChar)
+                    let charIdx = range.location + startChar
                     if let wordIdx = wordOffsets.firstIndex(where: { $0.start <= charIdx && charIdx < $0.end }) {
-                        print("📝 Found word index: \(wordIdx)")
                         if let groupIdx = wordGroups.firstIndex(where: { $0.contains(wordIdx) }) {
-                            print("🎯 Setting spoken group to: \(groupIdx)")
                             spokenGroup = groupIdx
-                        } else {
-                            print("❌ No group found containing word index: \(wordIdx)")
                         }
-                    } else {
-                        print("❌ No word found at character index: \(charIdx)")
                     }
                 }
             }
@@ -203,15 +241,13 @@ struct ContentView: View {
         self.speechDelegate = delegate
         synthesizer.delegate = delegate
         synthesizer.speak(utterance)
-        isSpeaking = true
         isPaused = false
+        spokenGroup = groupIdx
     }
 
     private func stopSpeaking() {
         synthesizer.stopSpeaking(at: .immediate)
-        isSpeaking = false
-        isPaused = false
-        spokenGroup = nil
+        // Do NOT set isSpeaking, isPaused, or spokenGroup here
     }
 
     private func pauseSpeaking() {
@@ -283,7 +319,6 @@ class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
     }
     
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
-        print("🔊 Will speak range: \(characterRange)")
         onCharSpoken?(characterRange)
     }
 }
