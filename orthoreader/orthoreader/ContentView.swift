@@ -25,11 +25,10 @@ struct ContentView: View {
     @State private var selectedGroup: Int? = nil
     @State private var spokenGroup: Int? = nil
     @State private var pendingGroupJump: Int? = nil
-    @State private var isJumping = false
-
-    // Voice selection
-    @State private var availableVoices: [AVSpeechSynthesisVoice] = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
-    @State private var selectedVoiceIdentifier: String = AVSpeechSynthesisVoice.speechVoices().first(where: { $0.language.hasPrefix("en") })?.identifier ?? ""
+    @State private var pdfBookmarkKey: String? = nil
+    @State private var savedBookmarkGroup: Int? = nil
+    @State private var lastLoadedPDFKey: String? = nil
+    @State private var scrollToGroup: Int? = nil
 
     var body: some View {
         ZStack {
@@ -41,58 +40,160 @@ struct ContentView: View {
                     .ignoresSafeArea()
             }
             VStack {
-                Button(action: {
-                    isPickerPresented = true
-                }) {
-                    Label("Select PDF", systemImage: "doc.text")
-                }
-                .padding()
-
-                Button(action: {
-                    loadSamplePDF()
-                }) {
-                    Label("Load Sample PDF", systemImage: "doc.richtext")
-                }
-                .padding(.bottom)
-
-                // Voice Picker
-                if !availableVoices.isEmpty {
-                    Picker("Voice", selection: $selectedVoiceIdentifier) {
-                        ForEach(availableVoices, id: \.self) { voice in
-                            Text(voice.name + " (" + voice.language + ")").tag(voice.identifier)
-                        }
+                // Show PDF selection buttons only when not speaking
+                if !isSpeaking {
+                    Button(action: {
+                        isPickerPresented = true
+                    }) {
+                        Label("Select PDF", systemImage: "doc.text")
+                            .frame(maxWidth: .infinity)
                     }
-                    .pickerStyle(MenuPickerStyle())
+                    .buttonStyle(.borderedProminent)
                     .padding(.horizontal)
+                    .padding(.top)
+
+                    Button(action: {
+                        loadSamplePDF()
+                    }) {
+                        Label("Load Sample PDF", systemImage: "doc.richtext")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.horizontal)
+                    .padding(.bottom)
+                } else {
+                    Button(action: {
+                        // Reset to home: stop TTS and clear PDF and state
+                        stopSpeaking()
+                        clearBookmark()
+                        extractedText = ""
+                        errorMessage = nil
+                        wordOffsets = []
+                        wordGroups = []
+                        selectedGroup = nil
+                        spokenGroup = nil
+                        pendingGroupJump = nil
+                        isPaused = false
+                        isSpeaking = false
+                    }) {
+                        Label("Home", systemImage: "house")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.horizontal)
+                    .padding(.top)
                 }
 
                 if !extractedText.isEmpty {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(wordGroups.indices, id: \.self) { groupIdx in
-                                let group = wordGroups[groupIdx]
-                                let start = wordOffsets[group.first ?? 0].start
-                                let end = wordOffsets[group.last ?? 0].end
-                                let textRange = extractedText.index(extractedText.startIndex, offsetBy: start)..<extractedText.index(extractedText.startIndex, offsetBy: end)
-                                let groupText = String(extractedText[textRange])
-                                let isHighlighted = selectedGroup == groupIdx || spokenGroup == groupIdx
-                                Button(action: {
-                                    selectedGroup = groupIdx
+                    // Prominently display currently spoken text when TTS is active
+                    if isSpeaking, let groupIdx = spokenGroup, groupIdx < wordGroups.count {
+                        let group = wordGroups[groupIdx]
+                        let start = wordOffsets[group.first ?? 0].start
+                        let end = wordOffsets[group.last ?? 0].end
+                        let textRange = extractedText.index(extractedText.startIndex, offsetBy: start)..<extractedText.index(extractedText.startIndex, offsetBy: end)
+                        let groupText = String(extractedText[textRange])
+                        Text(groupText)
+                            .padding()
+                            .background(Color.yellow.opacity(0.4))
+                            .cornerRadius(8)
+                            .font(.title3.bold())
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                    }
+                    // Resume button if bookmark exists and not currently speaking
+                    if let savedGroup = savedBookmarkGroup, !isSpeaking {
+                        Button(action: {
+                            startSpeaking(fromGroup: savedGroup)
+                        }) {
+                            Label("Resume from last position", systemImage: "bookmark.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                    }
+                    // Progress Indicator
+                    if wordGroups.count > 0 {
+                        let progress = spokenGroup != nil ? Double(spokenGroup! + 1) / Double(wordGroups.count) : 0.0
+                        VStack(spacing: 4) {
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(Color(.systemGray5))
+                                        .frame(height: 12)
+                                    Capsule()
+                                        .fill(Color.accentColor)
+                                        .frame(width: geo.size.width * progress, height: 12)
+                                        .animation(.easeInOut(duration: 0.2), value: progress)
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture { location in
+                                    let rel = location.x / geo.size.width
+                                    let groupIdx = min(max(Int(rel * Double(wordGroups.count)), 0), wordGroups.count - 1)
                                     if isSpeaking {
                                         pendingGroupJump = groupIdx
                                         stopSpeaking()
                                     } else {
                                         startSpeaking(fromGroup: groupIdx)
                                     }
-                                }) {
-                                    Text(groupText)
-                                        .padding(4)
-                                        .background(isHighlighted ? Color.yellow.opacity(0.3) : Color.clear)
-                                        .cornerRadius(4)
+                                    // Scroll to the selected group
+                                    scrollToGroup = groupIdx
+                                }
+                            }
+                            .frame(height: 16)
+                            Text("\(Int(progress * 100))% read")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 4)
+                    }
+                    ScrollViewReader { scrollProxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(wordGroups.indices, id: \.self) { groupIdx in
+                                    let group = wordGroups[groupIdx]
+                                    let start = wordOffsets[group.first ?? 0].start
+                                    let end = wordOffsets[group.last ?? 0].end
+                                    let textRange = extractedText.index(extractedText.startIndex, offsetBy: start)..<extractedText.index(extractedText.startIndex, offsetBy: end)
+                                    let groupText = String(extractedText[textRange])
+                                    let isHighlighted = selectedGroup == groupIdx || spokenGroup == groupIdx
+                                    Button(action: {
+                                        selectedGroup = groupIdx
+                                        if isSpeaking {
+                                            pendingGroupJump = groupIdx
+                                            stopSpeaking()
+                                        } else {
+                                            startSpeaking(fromGroup: groupIdx)
+                                        }
+                                        // Scroll to the selected group
+                                        scrollToGroup = groupIdx
+                                    }) {
+                                        Text(groupText)
+                                            .padding(4)
+                                            .background(isHighlighted ? Color.yellow.opacity(0.3) : Color.clear)
+                                            .cornerRadius(4)
+                                    }
+                                    .id(groupIdx)
+                                }
+                            }
+                            .padding()
+                        }
+                        .onChange(of: spokenGroup) { newGroup in
+                            if let group = newGroup {
+                                withAnimation {
+                                    scrollProxy.scrollTo(group, anchor: .center)
                                 }
                             }
                         }
-                        .padding()
+                        .onChange(of: scrollToGroup) { group in
+                            if let group = group {
+                                withAnimation {
+                                    scrollProxy.scrollTo(group, anchor: .center)
+                                }
+                                scrollToGroup = nil
+                            }
+                        }
                     }
                     // Move controls here so they are always visible
                     HStack {
@@ -134,16 +235,17 @@ struct ContentView: View {
                         .foregroundColor(.red)
                 }
             }
-        }
-        .sheet(isPresented: $isPickerPresented) {
-            DocumentPicker { url in
-                if let url = url {
-                    extractText(from: url)
+            .sheet(isPresented: $isPickerPresented) {
+                DocumentPicker { url in
+                    if let url = url {
+                        extractText(from: url)
+                    }
                 }
             }
         }
     }
 
+    // MARK: - PDF and Text Extraction
     private func extractText(from url: URL) {
         guard let pdf = PDFDocument(url: url) else {
             errorMessage = "Failed to open PDF."
@@ -158,6 +260,16 @@ struct ContentView: View {
         extractedText = text
         errorMessage = nil
         indexWordsAndGroups()
+        // Set bookmark key based on file name
+        let key = "bookmark_" + (url.lastPathComponent)
+        pdfBookmarkKey = key
+        lastLoadedPDFKey = key
+        // Load bookmark
+        if let saved = UserDefaults.standard.value(forKey: key) as? Int {
+            savedBookmarkGroup = saved
+        } else {
+            savedBookmarkGroup = nil
+        }
     }
 
     private func loadSamplePDF() {
@@ -166,6 +278,23 @@ struct ContentView: View {
         } else {
             errorMessage = "Sample PDF not found in app bundle."
         }
+    }
+
+    // Save bookmark when spokenGroup changes
+    private func saveBookmark() {
+        guard let key = pdfBookmarkKey, let group = spokenGroup else { return }
+        UserDefaults.standard.setValue(group, forKey: key)
+        savedBookmarkGroup = group
+    }
+
+    // Clear bookmark for previous PDF
+    private func clearBookmark() {
+        if let key = lastLoadedPDFKey {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        savedBookmarkGroup = nil
+        pdfBookmarkKey = nil
+        lastLoadedPDFKey = nil
     }
 
     // Index words and group them by 8
@@ -201,17 +330,13 @@ struct ContentView: View {
     private func startSpeaking(fromGroup groupIdx: Int) {
         guard !extractedText.isEmpty else { return }
         isSpeaking = true // Set immediately so controls stay visible
-        // Do NOT call stopSpeaking() here
         guard groupIdx < wordGroups.count else { return }
         let startWordIdx = wordGroups[groupIdx].first ?? 0
         let startChar = wordOffsets[startWordIdx].start
         let utterText = String(extractedText[extractedText.index(extractedText.startIndex, offsetBy: startChar)...])
         let utterance = AVSpeechUtterance(string: utterText)
-        if let voice = availableVoices.first(where: { $0.identifier == selectedVoiceIdentifier }) {
-            utterance.voice = voice
-        } else {
-            utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        }
+        // Always use Daniel (en-GB)
+        utterance.voice = AVSpeechSynthesisVoice(identifier: "com.apple.ttsbundle.Daniel-compact") ?? AVSpeechSynthesisVoice(language: "en-GB") ?? AVSpeechSynthesisVoice(language: "en-US")
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         let delegate = SpeechDelegate(
             onFinish: {
@@ -233,6 +358,7 @@ struct ContentView: View {
                     if let wordIdx = wordOffsets.firstIndex(where: { $0.start <= charIdx && charIdx < $0.end }) {
                         if let groupIdx = wordGroups.firstIndex(where: { $0.contains(wordIdx) }) {
                             spokenGroup = groupIdx
+                            saveBookmark()
                         }
                     }
                 }
@@ -243,11 +369,11 @@ struct ContentView: View {
         synthesizer.speak(utterance)
         isPaused = false
         spokenGroup = groupIdx
+        saveBookmark()
     }
 
     private func stopSpeaking() {
         synthesizer.stopSpeaking(at: .immediate)
-        // Do NOT set isSpeaking, isPaused, or spokenGroup here
     }
 
     private func pauseSpeaking() {
@@ -317,7 +443,6 @@ class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didContinue utterance: AVSpeechUtterance) {
         onContinue()
     }
-    
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
         onCharSpoken?(characterRange)
     }
