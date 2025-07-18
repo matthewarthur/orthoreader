@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		210A9A892E2A9BF80080FA36 /* LibraryPDFs in Resources */ = {isa = PBXBuildFile; fileRef = 210A9A882E2A9BF80080FA36 /* LibraryPDFs */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		21A123452E2942A200D1154E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		210A9A882E2A9BF80080FA36 /* LibraryPDFs */ = {isa = PBXFileReference; lastKnownFileType = folder; path = LibraryPDFs; sourceTree = "<group>"; };
 		21A123372E2942A000D1154E /* orthoreader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = orthoreader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		21A123442E2942A200D1154E /* orthoreaderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = orthoreaderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		21A1234E2E2942A200D1154E /* orthoreaderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = orthoreaderUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -104,6 +109,7 @@
 		21A1232E2E2942A000D1154E = {
 			isa = PBXGroup;
 			children = (
+				210A9A882E2A9BF80080FA36 /* LibraryPDFs */,
 				21A123392E2942A000D1154E /* orthoreader */,
 				21A123472E2942A200D1154E /* orthoreaderTests */,
 				21A123512E2942A200D1154E /* orthoreaderUITests */,
@@ -241,6 +247,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				210A9A892E2A9BF80080FA36 /* LibraryPDFs in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
