@@ -249,123 +249,191 @@ struct ContentView: View {
     @State private var currentPDFID: UUID? = nil
     @StateObject var readerVM = PDFReaderViewModel()
     
-    var body: some View {
+    // MARK: - Computed Views
+    private var homeView: some View {
         ZStack {
-            if appScreen == .home {
-                // Show background image only when no PDF is loaded
-                if readerVM.extractedText.isEmpty {
-                    Image("LaunchBackground")
-                        .resizable()
-                        .scaledToFill()
-                        .ignoresSafeArea()
+            // Show background image only when no PDF is loaded
+            if readerVM.extractedText.isEmpty {
+                Image("LaunchBackground")
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
+            }
+            VStack {
+                Spacer().frame(height: 32)
+                // Large, prominent Library button
+                Button(action: {
+                    print("Home: Library button tapped")
+                    readerVM.reset()
+                    libraryViewKey = UUID()
+                    appScreen = .library
+                }) {
+                    Label("Library", systemImage: "books.vertical")
+                        .font(.title2.bold())
+                        .frame(maxWidth: .infinity, minHeight: 60)
                 }
-                VStack {
-                    // Show Library button on home screen
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+                .padding(.horizontal, 32)
+                .padding(.bottom, 32)
+                .disabled(library.isEmpty)
+
+                Spacer()
+
+                // Lower third: Select PDF and Load Sample PDF buttons side by side
+                VStack(spacing: 20) {
                     Button(action: {
-                        print("Home: Library button tapped")
-                        readerVM.reset()
-                        libraryViewKey = UUID()
-                        appScreen = .library
+                        print("Home: Select PDF button tapped")
+                        isPickerPresented = true
                     }) {
-                        Label("Library", systemImage: "books.vertical")
+                        Label("Select PDF", systemImage: "doc.text")
                             .frame(maxWidth: .infinity)
+                            .multilineTextAlignment(.center)
                     }
                     .buttonStyle(.borderedProminent)
-                    .padding(.horizontal)
-                    .padding(.top)
-                    .disabled(library.isEmpty)
-                    // Show PDF selection buttons only when not speaking
-                    if !readerVM.isSpeaking {
-                        Button(action: {
-                            print("Home: Select PDF button tapped")
-                            isPickerPresented = true
-                        }) {
-                            Label("Select PDF", systemImage: "doc.text")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.horizontal)
-                        .padding(.top)
-                        
-                        Button(action: {
-                            print("Home: Load Sample PDF button tapped")
-                            loadSamplePDF()
-                        }) {
-                            Label("Load Sample PDF", systemImage: "doc.richtext")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.horizontal)
-                        .padding(.bottom)
+                    .tint(.accentColor)
+                    .disabled(readerVM.isSpeaking)
+
+                    Button(action: {
+                        print("Home: Load Sample PDF button tapped")
+                        loadSamplePDF()
+                    }) {
+                        Label("Load Sample PDF", systemImage: "doc.richtext")
+                            .frame(maxWidth: .infinity)
+                            .multilineTextAlignment(.center)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.accentColor)
+                    .disabled(readerVM.isSpeaking)
                 }
-            } else if appScreen == .library {
-                PDFLibraryView(library: library, selectedPDF: $selectedPDF, pdfSelectionCounter: $pdfSelectionCounter, currentPDFID: $currentPDFID, onHome: {
-                    print("Library: Home button tapped")
-                    // Reset all relevant state when going home
-                    readerVM.reset()
-                    selectedPDF = nil
-                    pdfSelectionCounter = 0
-                    currentPDFID = nil
-                    showLibrary = false
-                    showLibraryNav = false
-                    libraryViewKey = UUID()
-                    readerVM.isSpeaking = false
-                    readerVM.isPaused = false
-                    readerVM.pendingGroupJump = nil
-                    appScreen = .home
-                })
-                .id(libraryViewKey)
-            } else if appScreen == .reading {
-                // The existing PDF reading UI
-                VStack {
-                    // Prominently display currently spoken text when TTS is active
-                    if readerVM.isSpeaking, let groupIdx = readerVM.spokenGroup, groupIdx < readerVM.wordGroups.count {
-                        let group = readerVM.wordGroups[groupIdx]
-                        let start = readerVM.wordOffsets[group.first ?? 0].start
-                        let end = readerVM.wordOffsets[group.last ?? 0].end
-                        let textRange = readerVM.extractedText.index(readerVM.extractedText.startIndex, offsetBy: start)..<readerVM.extractedText.index(readerVM.extractedText.startIndex, offsetBy: end)
-                        let groupText = String(readerVM.extractedText[textRange])
-                        Text(groupText)
-                            .padding()
-                            .background(Color.yellow.opacity(0.4))
-                            .cornerRadius(8)
-                            .font(.title3.bold())
-                            .padding(.horizontal)
-                            .padding(.top, 8)
+                .padding(.horizontal, 32)
+                .padding(.bottom, 40)
+
+                Spacer()
+
+                // About This Icon button at the bottom
+                Button(action: {
+                    if let url = URL(string: "https://wilcoxiconography.pythonanywhere.com/") {
+                        UIApplication.shared.open(url)
                     }
-                    // Resume button if bookmark exists and not currently speaking
-                    if let savedGroup = readerVM.savedBookmarkGroup, !readerVM.isSpeaking {
-                        Button(action: {
-                            print("Reading: Resume button tapped")
-                            readerVM.startSpeaking(fromGroup: savedGroup)
-                        }) {
-                            Label("Resume from last position", systemImage: "bookmark.fill")
-                                .frame(maxWidth: .infinity)
+                }) {
+                    Text("About This Icon")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+                .padding(.bottom, 16)
+            }
+        }
+    }
+    
+    private var libraryView: some View {
+        PDFLibraryView(library: library, selectedPDF: $selectedPDF, pdfSelectionCounter: $pdfSelectionCounter, currentPDFID: $currentPDFID, onHome: {
+            print("Library: Home button tapped")
+            // Reset all relevant state when going home
+            readerVM.reset()
+            selectedPDF = nil
+            pdfSelectionCounter = 0
+            currentPDFID = nil
+            showLibrary = false
+            showLibraryNav = false
+            libraryViewKey = UUID()
+            readerVM.isSpeaking = false
+            readerVM.isPaused = false
+            readerVM.pendingGroupJump = nil
+            appScreen = .home
+        })
+        .id(libraryViewKey)
+    }
+    
+    private var readingView: some View {
+        VStack {
+            // Prominently display currently spoken text when TTS is active
+            if readerVM.isSpeaking, let groupIdx = readerVM.spokenGroup, groupIdx < readerVM.wordGroups.count {
+                let group = readerVM.wordGroups[groupIdx]
+                let start = readerVM.wordOffsets[group.first ?? 0].start
+                let end = readerVM.wordOffsets[group.last ?? 0].end
+                let textRange = readerVM.extractedText.index(readerVM.extractedText.startIndex, offsetBy: start)..<readerVM.extractedText.index(readerVM.extractedText.startIndex, offsetBy: end)
+                let groupText = String(readerVM.extractedText[textRange])
+                Text(groupText)
+                    .padding()
+                    .background(Color.yellow.opacity(0.4))
+                    .cornerRadius(8)
+                    .font(.title3.bold())
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+            }
+            // Resume button if bookmark exists and not currently speaking
+            if let savedGroup = readerVM.savedBookmarkGroup, !readerVM.isSpeaking {
+                Button(action: {
+                    print("Reading: Resume button tapped")
+                    readerVM.startSpeaking(fromGroup: savedGroup)
+                }) {
+                    Label("Resume from last position", systemImage: "bookmark.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.horizontal)
+                .padding(.top, 4)
+            }
+            // Progress Indicator
+            if readerVM.wordGroups.count > 0 {
+                let progress = readerVM.spokenGroup != nil ? Double(readerVM.spokenGroup! + 1) / Double(readerVM.wordGroups.count) : 0.0
+                VStack(spacing: 4) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color(.systemGray5))
+                                .frame(height: 12)
+                            Capsule()
+                                .fill(Color.accentColor)
+                                .frame(width: geo.size.width * progress, height: 12)
+                                .animation(.easeInOut(duration: 0.2), value: progress)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.horizontal)
-                        .padding(.top, 4)
-                    }
-                    // Progress Indicator
-                    if readerVM.wordGroups.count > 0 {
-                        let progress = readerVM.spokenGroup != nil ? Double(readerVM.spokenGroup! + 1) / Double(readerVM.wordGroups.count) : 0.0
-                        VStack(spacing: 4) {
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule()
-                                        .fill(Color(.systemGray5))
-                                        .frame(height: 12)
-                                    Capsule()
-                                        .fill(Color.accentColor)
-                                        .frame(width: geo.size.width * progress, height: 12)
-                                        .animation(.easeInOut(duration: 0.2), value: progress)
+                        .contentShape(Rectangle())
+                                                    .onTapGesture { location in
+                                print("Reading: Progress bar tapped")
+                                let rel = location.x / geo.size.width
+                                let groupIdx = min(max(Int(rel * Double(readerVM.wordGroups.count)), 0), readerVM.wordGroups.count - 1)
+                                // Save bookmark when user jumps to a position via progress bar
+                                readerVM.spokenGroup = groupIdx
+                                readerVM.saveBookmark()
+                                if readerVM.isSpeaking {
+                                    readerVM.pendingGroupJump = groupIdx
+                                    readerVM.stopSpeaking()
+                                } else {
+                                    readerVM.startSpeaking(fromGroup: groupIdx)
                                 }
-                                .contentShape(Rectangle())
-                                .onTapGesture { location in
-                                    print("Reading: Progress bar tapped")
-                                    let rel = location.x / geo.size.width
-                                    let groupIdx = min(max(Int(rel * Double(readerVM.wordGroups.count)), 0), readerVM.wordGroups.count - 1)
+                                // Scroll to the selected group
+                                readerVM.scrollToGroup = groupIdx
+                            }
+                    }
+                    .frame(height: 16)
+                    Text("\(Int(progress * 100))% read")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal)
+                .padding(.top, 4)
+            }
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(readerVM.wordGroups.indices, id: \.self) { groupIdx in
+                            let group = readerVM.wordGroups[groupIdx]
+                            let start = readerVM.wordOffsets[group.first ?? 0].start
+                            let end = readerVM.wordOffsets[group.last ?? 0].end
+                            let textRange = readerVM.extractedText.index(readerVM.extractedText.startIndex, offsetBy: start)..<readerVM.extractedText.index(readerVM.extractedText.startIndex, offsetBy: end)
+                            let groupText = String(readerVM.extractedText[textRange])
+                            let isHighlighted = readerVM.selectedGroup == groupIdx || readerVM.spokenGroup == groupIdx
+                                                            Button(action: {
+                                    print("Reading: Text group button tapped: groupIdx=\(groupIdx)")
+                                    readerVM.selectedGroup = groupIdx
+                                    // Save bookmark when user manually selects a position
+                                    readerVM.spokenGroup = groupIdx
+                                    readerVM.saveBookmark()
                                     if readerVM.isSpeaking {
                                         readerVM.pendingGroupJump = groupIdx
                                         readerVM.stopSpeaking()
@@ -374,127 +442,147 @@ struct ContentView: View {
                                     }
                                     // Scroll to the selected group
                                     readerVM.scrollToGroup = groupIdx
-                                }
+                                }) {
+                                Text(groupText)
+                                    .padding(4)
+                                    .background(isHighlighted ? Color.yellow.opacity(0.3) : Color.clear)
+                                    .cornerRadius(4)
                             }
-                            .frame(height: 16)
-                            Text("\(Int(progress * 100))% read")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, 4)
-                    }
-                    ScrollViewReader { scrollProxy in
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ForEach(readerVM.wordGroups.indices, id: \.self) { groupIdx in
-                                    let group = readerVM.wordGroups[groupIdx]
-                                    let start = readerVM.wordOffsets[group.first ?? 0].start
-                                    let end = readerVM.wordOffsets[group.last ?? 0].end
-                                    let textRange = readerVM.extractedText.index(readerVM.extractedText.startIndex, offsetBy: start)..<readerVM.extractedText.index(readerVM.extractedText.startIndex, offsetBy: end)
-                                    let groupText = String(readerVM.extractedText[textRange])
-                                    let isHighlighted = readerVM.selectedGroup == groupIdx || readerVM.spokenGroup == groupIdx
-                                    Button(action: {
-                                        print("Reading: Text group button tapped: groupIdx=\(groupIdx)")
-                                        readerVM.selectedGroup = groupIdx
-                                        if readerVM.isSpeaking {
-                                            readerVM.pendingGroupJump = groupIdx
-                                            readerVM.stopSpeaking()
-                                        } else {
-                                            readerVM.startSpeaking(fromGroup: groupIdx)
-                                        }
-                                        // Scroll to the selected group
-                                        readerVM.scrollToGroup = groupIdx
-                                    }) {
-                                        Text(groupText)
-                                            .padding(4)
-                                            .background(isHighlighted ? Color.yellow.opacity(0.3) : Color.clear)
-                                            .cornerRadius(4)
-                                    }
-                                    .id(groupIdx)
-                                }
-                            }
-                            .padding()
-                        }
-                        .onChange(of: readerVM.spokenGroup) { newGroup in
-                            if let group = newGroup {
-                                withAnimation {
-                                    scrollProxy.scrollTo(group, anchor: .center)
-                                }
-                            }
-                        }
-                        .onChange(of: readerVM.scrollToGroup) { group in
-                            if let group = group {
-                                withAnimation {
-                                    scrollProxy.scrollTo(group, anchor: .center)
-                                }
-                                readerVM.scrollToGroup = nil
-                            }
+                            .id(groupIdx)
                         }
                     }
-                    // Move controls here so they are always visible
-                    HStack {
-                        if !readerVM.isSpeaking {
-                            Button(action: {
-                                print("Reading: Read Aloud button tapped")
-                                readerVM.startSpeaking()
-                            }) {
-                                Label("Read Aloud", systemImage: "speaker.wave.2.fill")
-                            }
-                            .padding(.trailing)
-                            .disabled(readerVM.extractedText.isEmpty)
-                        }
-                        if readerVM.isSpeaking {
-                            Button(action: {
-                                print("Reading: Pause/Resume button tapped")
-                                if readerVM.isPaused {
-                                    readerVM.resumeSpeaking()
-                                } else {
-                                    readerVM.pauseSpeaking()
-                                }
-                            }) {
-                                Label(readerVM.isPaused ? "Resume" : "Pause", systemImage: readerVM.isPaused ? "play.fill" : "pause.fill")
-                            }
-                            Button(action: {
-                                print("Reading: Restart button tapped")
-                                readerVM.restartFromBeginning()
-                            }) {
-                                Label("Restart", systemImage: "arrow.counterclockwise")
-                            }
-                            .disabled(readerVM.extractedText.isEmpty)
-                        }
-                    }
-                    .padding(.bottom)
-                    Button(action: {
-                        print("Reading: Home button tapped")
-                        // Home button in reading view
-                        readerVM.reset()
-                        readerVM.stopSpeaking()
-                        readerVM.clearBookmark()
-                        readerVM.extractedText = ""
-                        readerVM.errorMessage = nil
-                        readerVM.wordOffsets = []
-                        readerVM.wordGroups = []
-                        readerVM.selectedGroup = nil
-                        readerVM.spokenGroup = nil
-                        readerVM.pendingGroupJump = nil
-                        readerVM.isPaused = false
-                        readerVM.isSpeaking = false
-                        showLibrary = false
-                        showLibraryNav = false
-                        selectedPDF = nil
-                        pdfSelectionCounter = 0
-                        currentPDFID = nil
-                        libraryViewKey = UUID()
-                        appScreen = .home
-                    }) {
-                        Label("Home", systemImage: "house")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(.horizontal)
-                    .padding(.top)
+                    .padding()
                 }
+                .scrollIndicators(.visible, axes: .vertical)
+                .onChange(of: readerVM.spokenGroup) { newGroup in
+                    if let group = newGroup {
+                        withAnimation {
+                            scrollProxy.scrollTo(group, anchor: .center)
+                        }
+                    }
+                }
+                .onChange(of: readerVM.scrollToGroup) { group in
+                    if let group = group {
+                        withAnimation {
+                            scrollProxy.scrollTo(group, anchor: .center)
+                        }
+                        readerVM.scrollToGroup = nil
+                    }
+                }
+            }
+            // Move controls here so they are always visible
+            HStack {
+                if !readerVM.isSpeaking {
+                    Button(action: {
+                        print("Reading: Read Aloud button tapped")
+                        readerVM.startSpeaking()
+                    }) {
+                        Label("Read Aloud", systemImage: "speaker.wave.2.fill")
+                    }
+                    .padding(.trailing)
+                    .disabled(readerVM.extractedText.isEmpty)
+                }
+                if readerVM.isSpeaking {
+                    Button(action: {
+                        print("Reading: Pause/Resume button tapped")
+                        if readerVM.isPaused {
+                            readerVM.resumeSpeaking()
+                        } else {
+                            readerVM.pauseSpeaking()
+                        }
+                    }) {
+                        Label(readerVM.isPaused ? "Resume" : "Pause", systemImage: readerVM.isPaused ? "play.fill" : "pause.fill")
+                    }
+                    Button(action: {
+                        print("Reading: Restart button tapped")
+                        readerVM.restartFromBeginning()
+                    }) {
+                        Label("Restart", systemImage: "arrow.counterclockwise")
+                    }
+                    .disabled(readerVM.extractedText.isEmpty)
+                }
+            }
+            .padding(.bottom)
+            HStack {
+                Button(action: {
+                    print("Reading: Library button tapped")
+                    // Save current position before leaving
+                    if let currentGroup = readerVM.spokenGroup ?? readerVM.selectedGroup {
+                        readerVM.spokenGroup = currentGroup
+                        readerVM.saveBookmark()
+                    }
+                    // Library button in reading view
+                    readerVM.reset()
+                    readerVM.stopSpeaking()
+                    readerVM.clearBookmark()
+                    readerVM.extractedText = ""
+                    readerVM.errorMessage = nil
+                    readerVM.wordOffsets = []
+                    readerVM.wordGroups = []
+                    readerVM.selectedGroup = nil
+                    readerVM.spokenGroup = nil
+                    readerVM.pendingGroupJump = nil
+                    readerVM.isPaused = false
+                    readerVM.isSpeaking = false
+                    showLibrary = false
+                    showLibraryNav = false
+                    selectedPDF = nil
+                    pdfSelectionCounter = 0
+                    currentPDFID = nil
+                    libraryViewKey = UUID()
+                    appScreen = .library
+                }) {
+                    Label("Library", systemImage: "books.vertical")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                
+                Button(action: {
+                    print("Reading: Home button tapped")
+                    // Save current position before leaving
+                    if let currentGroup = readerVM.spokenGroup ?? readerVM.selectedGroup {
+                        readerVM.spokenGroup = currentGroup
+                        readerVM.saveBookmark()
+                    }
+                    // Home button in reading view
+                    readerVM.reset()
+                    readerVM.stopSpeaking()
+                    readerVM.clearBookmark()
+                    readerVM.extractedText = ""
+                    readerVM.errorMessage = nil
+                    readerVM.wordOffsets = []
+                    readerVM.wordGroups = []
+                    readerVM.selectedGroup = nil
+                    readerVM.spokenGroup = nil
+                    readerVM.pendingGroupJump = nil
+                    readerVM.isPaused = false
+                    readerVM.isSpeaking = false
+                    showLibrary = false
+                    showLibraryNav = false
+                    selectedPDF = nil
+                    pdfSelectionCounter = 0
+                    currentPDFID = nil
+                    libraryViewKey = UUID()
+                    appScreen = .home
+                }) {
+                    Label("Home", systemImage: "house")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.horizontal)
+            .padding(.top)
+        }
+    }
+    
+    var body: some View {
+        ZStack {
+            if appScreen == .home {
+                homeView
+            } else if appScreen == .library {
+                libraryView
+            } else if appScreen == .reading {
+                readingView
             }
         }
         .sheet(isPresented: $isPickerPresented) {
@@ -502,6 +590,13 @@ struct ContentView: View {
                 if let url = url {
                     readerVM.extractText(from: url)
                 }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            // Save bookmark when app goes to background
+            if appScreen == .reading, let currentGroup = readerVM.spokenGroup ?? readerVM.selectedGroup {
+                readerVM.spokenGroup = currentGroup
+                readerVM.saveBookmark()
             }
         }
         .onChange(of: currentPDFID) { id in
