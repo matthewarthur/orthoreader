@@ -9,6 +9,7 @@ import SwiftUI
 import PDFKit
 import UniformTypeIdentifiers
 import AVFoundation
+import MediaPlayer
 
 // PDFInfo struct for library
 struct PDFInfo: Identifiable, Hashable {
@@ -46,6 +47,13 @@ class PDFReaderViewModel: ObservableObject {
     @Published var didLoadPDF: Bool = false
     private let synthesizer = AVSpeechSynthesizer()
     var speechDelegate: SpeechDelegate? = nil
+    // Store current PDF metadata for Now Playing
+    private(set) var currentPDFTitle: String = ""
+    private(set) var currentPDFAuthor: String = ""
+
+    init() {
+        setupRemoteTransportControls()
+    }
 
     func reset() {
         extractedText = ""
@@ -85,6 +93,15 @@ class PDFReaderViewModel: ObservableObject {
         }
         print("=== Total extracted text length: \(text.count) ===")
         extractedText = text
+        
+        // Set current PDF metadata for Now Playing
+        currentPDFTitle = url.deletingPathExtension().lastPathComponent
+        // Try to extract author from path if possible
+        if let authorFolder = url.pathComponents.dropLast().last {
+            currentPDFAuthor = authorFolder
+        } else {
+            currentPDFAuthor = ""
+        }
         
         // Check if text is very large and show warning
         if text.count > 100000 {
@@ -199,6 +216,8 @@ class PDFReaderViewModel: ObservableObject {
         isPaused = false
         spokenGroup = groupIdx
         saveBookmark()
+        // Update Now Playing Info
+        updateNowPlayingInfo(title: currentPDFTitle, author: currentPDFAuthor, isPlaying: true)
     }
 
     func stopSpeaking() {
@@ -208,11 +227,15 @@ class PDFReaderViewModel: ObservableObject {
     func pauseSpeaking() {
         synthesizer.pauseSpeaking(at: .word)
         isPaused = true
+        // Update Now Playing Info
+        updateNowPlayingInfo(title: currentPDFTitle, author: currentPDFAuthor, isPlaying: false)
     }
 
     func resumeSpeaking() {
         synthesizer.continueSpeaking()
         isPaused = false
+        // Update Now Playing Info
+        updateNowPlayingInfo(title: currentPDFTitle, author: currentPDFAuthor, isPlaying: true)
     }
 
     func restartFromBeginning() {
@@ -233,6 +256,34 @@ class PDFReaderViewModel: ObservableObject {
         savedBookmarkGroup = nil
         pdfBookmarkKey = nil
         lastLoadedPDFKey = nil
+    }
+
+    // MARK: - Now Playing Info & Remote Controls
+    func updateNowPlayingInfo(title: String, author: String, isPlaying: Bool) {
+        var nowPlayingInfo = [String: Any]()
+        nowPlayingInfo[MPMediaItemPropertyTitle] = title
+        nowPlayingInfo[MPMediaItemPropertyArtist] = author
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+
+        // Add artwork (app icon)
+        if let icon = UIImage(named: "NowPlayingIcon") {
+            let artwork = MPMediaItemArtwork(boundsSize: icon.size) { _ in icon }
+            nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+    }
+
+    func setupRemoteTransportControls() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.playCommand.addTarget { [weak self] event in
+            self?.resumeSpeaking()
+            return .success
+        }
+        commandCenter.pauseCommand.addTarget { [weak self] event in
+            self?.pauseSpeaking()
+            return .success
+        }
     }
 }
 
